@@ -5,11 +5,13 @@ import requests
 from io import StringIO
 
 DB_PATH = "data/pension.db"
+CSV_PATH = "data/prices.csv"
 URL = "https://www.zwitserleven.nl/over-zwitserleven/verantwoord-beleggen/fondsen/"
 
 print("=== START SCRIPT ===")
 print("Working directory:", os.getcwd())
 print("DB path:", DB_PATH)
+print("CSV path:", CSV_PATH)
 print("DB exists before run:", os.path.exists(DB_PATH))
 
 headers = {"User-Agent": "Mozilla/5.0"}
@@ -24,29 +26,25 @@ df = tables[0]
 print("Kolommen gevonden:", list(df.columns))
 print("Aantal rijen gevonden:", len(df))
 
-# Alleen nodige kolommen
 df = df[["Fonds", "Datum", "Koers"]]
 
-# Koers opschonen
 df["Koers"] = (
     df["Koers"]
     .astype(str)
     .str.replace("€", "", regex=False)
     .str.replace(",", ".", regex=False)
+    .str.replace("\xa0", "", regex=False)
     .str.strip()
     .astype(float)
 )
 
-# Datum opschonen
 df["Datum"] = pd.to_datetime(df["Datum"], dayfirst=True)
 new_date = df["Datum"].iloc[0].strftime("%Y-%m-%d")
 print("Scrape datum:", new_date)
 
-# Database openen
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
-# Tabel aanmaken als die nog niet bestaat
 cur.execute("""
 CREATE TABLE IF NOT EXISTS prices (
     date TEXT,
@@ -56,7 +54,6 @@ CREATE TABLE IF NOT EXISTS prices (
 )
 """)
 
-# Laatste datum checken
 cur.execute("SELECT MAX(date) FROM prices")
 result = cur.fetchone()[0]
 print("Laatste datum in DB:", result)
@@ -75,6 +72,16 @@ else:
         )
     conn.commit()
     print("Toegevoegd:", len(df), "regels")
+
+# Exporteer altijd volledige database naar CSV
+export_df = pd.read_sql_query(
+    "SELECT date, fund, price FROM prices ORDER BY date, fund",
+    conn
+)
+
+export_df.to_csv(CSV_PATH, index=False, encoding="utf-8-sig")
+print("CSV bijgewerkt:", CSV_PATH)
+print("Aantal regels in CSV:", len(export_df))
 
 conn.close()
 print("=== EINDE SCRIPT ===")
