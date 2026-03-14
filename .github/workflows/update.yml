@@ -1,0 +1,37 @@
+name: update funds
+
+on:
+  schedule:
+    - cron: "0 18 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  run:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: install packages
+        run: |
+          pip install pandas lxml html5lib beautifulsoup4
+
+      - name: run script
+        run: |
+          python script/update_db.py
+
+      - name: commit db
+        run: |
+          git config --global user.name "bot"
+          git config --global user.email "bot@github.com"
+          git add data/pension.db
+          git commit -m "update db" || echo no changes
+          git push
