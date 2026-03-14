@@ -2,6 +2,7 @@ import os
 import sqlite3
 import pandas as pd
 import requests
+from io import StringIO
 
 DB_PATH = "data/pension.db"
 URL = "https://www.zwitserleven.nl/over-zwitserleven/verantwoord-beleggen/fondsen/"
@@ -11,20 +12,17 @@ print("Working directory:", os.getcwd())
 print("DB path:", DB_PATH)
 print("DB exists before run:", os.path.exists(DB_PATH))
 
-# Website ophalen
 headers = {"User-Agent": "Mozilla/5.0"}
 response = requests.get(URL, headers=headers, timeout=30)
 print("HTTP status:", response.status_code)
 response.raise_for_status()
 
-# Tabellen lezen
-tables = pd.read_html(response.text)
+tables = pd.read_html(StringIO(response.text))
 print("Aantal tabellen gevonden:", len(tables))
 
 df = tables[0]
 print("Kolommen gevonden:", list(df.columns))
 print("Aantal rijen gevonden:", len(df))
-print(df.head())
 
 # Alleen nodige kolommen
 df = df[["Fonds", "Datum", "Koers"]]
