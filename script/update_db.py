@@ -1,50 +1,84 @@
-name: update funds
+import pandas as pd
+import sqlite3
+import os
+import requests
 
-on:
-  schedule:
-    - cron: "0 18 * * 1-5"
-  workflow_dispatch:
+DB_PATH = "data/pension.db"
+URL = "https://www.zwitserleven.nl/over-zwitserleven/verantwoord-beleggen/fondsen/"
 
-permissions:
-  contents: write
+print("Current working directory:", os.getcwd())
+print("Database path:", DB_PATH)
+print("Database exists before run:", os.path.exists(DB_PATH))
+print("Start ophalen website...")
 
-jobs:
-  run:
-    runs-on: ubuntu-latest
+headers = {
+    "User-Agent": "Mozilla/5.0"
+}
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+response = requests.get(URL, headers=headers, timeout=30)
+response.raise_for_status()
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+print("Website status code:", response.status_code)
 
-      - name: Install packages
-        run: |
-          python -m pip install --upgrade pip
-          pip install pandas lxml html5lib beautifulsoup4
+tables = pd.read_html(response.text)
 
-      - name: Run update script
-        run: |
-          python script/update_db.py
+print("Aantal tabellen gevonden:", len(tables))
 
-      - name: Show git status
-        run: |
-          git status
-          ls -l data || dir data
+df = tables[0]
+print("Kolommen gevonden:", list(df.columns))
+print("Aantal rijen gevonden:", len(df))
 
-      - name: Commit and push if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/pension.db
-          if git diff --cached --quiet; then
-            echo "Geen wijzigingen"
-          else
-            git commit -m "Update pension.db"
-            git push origin HEAD:main
-          fi
+df = df[["Fonds", "Datum", "Koers"]]
+
+df["Koers"] = (
+    df["Koers"]
+    .astype(str)
+    .str.replace("€", "", regex=False)
+    .str.replace(",", ".", regex=False)
+    .str.strip()
+    .astype(float)
+)
+
+df["Datum"] = pd.to_datetime(df["Datum"], dayfirst=True)
+
+new_date = df["Datum"].iloc[0].strftime("%Y-%m-%d")
+print("Scrape datum:", new_date)
+
+conn = sqlite3.connect(DB_PATH)
+cur = conn.cursor()
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS prices (
+    date TEXT,
+    fund TEXT,
+    price REAL,
+    PRIMARY KEY (date, fund)
+)
+""")
+
+cur.execute("SELECT MAX(date) FROM prices")
+result = cur.fetchone()[0]
+
+print("Laatste datum in DB:", result)
+
+if result == new_date:
+    print("Datum bestaat al, niks doen")
+else:
+    print("Nieuwe datum, data toevoegen")
+    for _, row in df.iterrows():
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO prices (date, fund, price)
+            VALUES (?, ?, ?)
+            """,
+            (
+                new_date,
+                row["Fonds"],
+                float(row["Koers"]),
+            ),
+        )
+    conn.commit()
+    print("Toegevoegd:", len(df), "regels")
+
+conn.close()
+print("Script klaar")
