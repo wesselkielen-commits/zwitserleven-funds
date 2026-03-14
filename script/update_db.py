@@ -1,80 +1,50 @@
-import pandas as pd
-import sqlite3
+name: update funds
 
-DB_PATH = "data/pension.db"
+on:
+  schedule:
+    - cron: "0 18 * * 1-5"
+  workflow_dispatch:
 
-URL = "https://www.zwitserleven.nl/over-zwitserleven/verantwoord-beleggen/fondsen/"
+permissions:
+  contents: write
 
+jobs:
+  run:
+    runs-on: ubuntu-latest
 
-# -------------------
-# SCRAPE WEBSITE
-# -------------------
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-tables = pd.read_html(URL)
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-df = tables[0]
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas lxml html5lib beautifulsoup4
 
-df = df[["Fonds", "Datum", "Koers"]]
+      - name: Run update script
+        run: |
+          python script/update_db.py
 
-df["Koers"] = (
-    df["Koers"]
-    .str.replace("€", "")
-    .str.replace(",", ".")
-    .str.strip()
-    .astype(float)
-)
+      - name: Show git status
+        run: |
+          git status
+          ls -l data || dir data
 
-df["Datum"] = pd.to_datetime(df["Datum"], dayfirst=True)
-
-print("Scrape datum:", df["Datum"].iloc[0])
-
-
-# -------------------
-# CONNECT DATABASE
-# -------------------
-
-conn = sqlite3.connect(DB_PATH)
-cur = conn.cursor()
-
-
-# -------------------
-# CHECK LAATSTE DATUM
-# -------------------
-
-cur.execute("SELECT MAX(date) FROM prices")
-
-result = cur.fetchone()[0]
-
-print("Laatste datum in DB:", result)
-
-
-new_date = df["Datum"].iloc[0].strftime("%Y-%m-%d")
-
-
-if result == new_date:
-
-    print("Datum bestaat al, niks doen")
-
-else:
-
-    print("Nieuwe datum, data toevoegen")
-
-    for _, row in df.iterrows():
-
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO prices (date, fund, price)
-            VALUES (?, ?, ?)
-            """,
-            (
-                new_date,
-                row["Fonds"],
-                float(row["Koers"]),
-            ),
-        )
-
-    conn.commit()
-    print("Toegevoegd")
-
-
-conn.close()
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/pension.db
+          if git diff --cached --quiet; then
+            echo "Geen wijzigingen"
+          else
+            git commit -m "Update pension.db"
+            git push origin HEAD:main
+          fi
