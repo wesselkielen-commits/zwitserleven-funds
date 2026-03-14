@@ -1,7 +1,7 @@
 import pandas as pd
 import sqlite3
 
-DB_PATH = r"C:\Users\Wessel.Kielen\OneDrive - EPNetherlands\Python\2026 Database project\data\pension.db"
+DB_PATH = "data/pension.db"
 
 URL = "https://www.zwitserleven.nl/over-zwitserleven/verantwoord-beleggen/fondsen/"
 
